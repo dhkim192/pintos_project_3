@@ -183,10 +183,9 @@ void process_exit(void)
     file_close(thread_get_running_file());
     lock_release(filesys_lock);  
 
+    munmap_all();
+    
     virtual_memory_entry_destroy(&thread_current()->virtual_memory);
-    //for (int i = 2; i < thread_current()->next_handle; i++) {
-    //    sys_munmap(i);
-    //}
  
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

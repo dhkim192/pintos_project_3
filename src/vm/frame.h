@@ -17,5 +17,7 @@ void frame_init (void);
 struct frame *frame_alloc (void *);
 void frame_free (void *);
 
+struct list_elem * get_next_lru_clock();
+struct frame * choose_frame();
 
 #endif /* vm/frame.h */

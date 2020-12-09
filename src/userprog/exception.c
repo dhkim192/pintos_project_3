@@ -5,6 +5,7 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "vm/page.h"
 #include "vm/frame.h"
@@ -18,6 +19,8 @@ static void page_fault(struct intr_frame *);
 
 bool verify_stack (int32_t addr, int32_t esp);
 void expand_stack (void *addr);
+
+extern struct lock filesys_lock;
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -155,19 +158,26 @@ page_fault(struct intr_frame *f)
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
 
-    struct virtual_memory_entry * entry = virtual_memory_entry_find(fault_addr);
+    struct virtual_memory_entry * entry = virtual_memory_entry_find(pg_round_down(fault_addr));
     if (verify_stack(fault_addr, f->esp)) {
         if (!entry) {    
             expand_stack(fault_addr);
             return;
         }
     }
-
+    
     if (not_present) {
         if (!lazy_load(pg_round_down(fault_addr))) {
             syscall_exit(-1);
         }
         return;
+    }
+
+    if (!user) {
+        if (lock_held_by_current_thread (&filesys_lock)) {
+            lock_release (&filesys_lock);
+        }
+        syscall_exit (-1);
     }
 
     /* To implement virtual memory, delete the rest of the function

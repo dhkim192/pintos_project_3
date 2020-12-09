@@ -234,7 +234,6 @@ syscall_handler(struct intr_frame *f)
     }
 }
 
-
 /* Checks user-provided virtual address. If it is
    invalid, terminates the current process. */
 static void
@@ -265,6 +264,7 @@ static void syscall_halt(void)
 void syscall_exit(int status)
 {
     struct process *pcb = thread_get_pcb();
+    struct thread *cur = thread_current ();
 
     pcb->exit_status = status;
     printf("%s: exit(%d)\n", thread_name(), status);
@@ -493,6 +493,19 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
+struct mapping * find_mapping (int handle) {
+    struct thread * cur = thread_current();
+    struct list_elem * elem;
+ 
+    for (elem = list_begin(&cur->mappings); elem != list_end (&cur->mappings); elem = list_next (elem)) {
+        struct mapping * mmap = list_entry(elem, struct mapping, mmap_elem);
+        if (mmap->handle == handle) { 
+            return mmap;
+        }
+    }
+    return NULL;
+}
+
 void do_munmap (struct mapping * mmap) {
     struct list_elem * elem;
 
@@ -514,25 +527,14 @@ void do_munmap (struct mapping * mmap) {
         elem = list_remove(elem);
     }
 
+    file_close(mmap->file);
     list_remove(&mmap->mmap_elem);
     free(mmap);
 }
 
-struct mapping * find_mapping(int handle) {
-    struct thread * cur = thread_current();
-    struct list_elem * elem;
-
-    for (elem = list_begin(&cur->mappings); elem != list_end (&cur->mappings); elem = list_next (elem)) {
-        struct mapping * mmap = list_entry(elem, struct mapping, mmap_elem);
-        if (mmap->handle == handle) {
-            return mmap;
-        }
-    }
-    return NULL;
-}
-
 int syscall_mmap (int handle, void * addr) {
     struct file_descriptor_entry * fde = process_get_fde(handle);
+    struct thread *cur = thread_current ();
     struct mapping * mmap = malloc(sizeof * mmap);
     size_t offset;
     off_t length;
@@ -542,8 +544,9 @@ int syscall_mmap (int handle, void * addr) {
     }
 
     list_init(&mmap->mapping_list);
-    handle = thread_current()->next_handle;
-    thread_current()->next_handle++;
+
+    mmap->handle = handle = cur->next_handle;
+    cur->next_handle++;
 
     lock_acquire (&filesys_lock);
     mmap->file = file_reopen (fde->file);
@@ -565,7 +568,6 @@ int syscall_mmap (int handle, void * addr) {
             do_munmap (mmap);
             return -1;
         }
-
         entry->file = mmap->file;
         entry->writable = true;
         entry->read_bytes = length >= PGSIZE ? PGSIZE : length;
@@ -574,7 +576,11 @@ int syscall_mmap (int handle, void * addr) {
         entry->vaddr = addr;
         entry->offset = offset;
 
-        virtual_memory_entry_insert(&thread_current()->virtual_memory, entry);
+        bool ok = virtual_memory_entry_insert(&thread_current()->virtual_memory, entry);
+        if (!ok) {
+            do_munmap (mmap);
+            return -1;
+        }
         list_push_front(&mmap->mapping_list, &entry->mmap_elem); 
         
         offset += PGSIZE;
@@ -585,10 +591,19 @@ int syscall_mmap (int handle, void * addr) {
     return mmap->handle;
 }
 
-void syscall_munmap (int mapping) {
+void syscall_munmap(int mapping) {
     struct mapping * mmap = find_mapping(mapping);
     if (!mmap) {
         syscall_exit(-1);
     }
     do_munmap(mmap);
+}
+
+void munmap_all() {
+    struct thread * cur = thread_current();
+
+    while (!list_empty (&cur->mappings)) {
+        struct mapping * mmap = list_entry (list_front (&cur->mappings), struct mapping, mmap_elem);
+        do_munmap(mmap);
+    }
 }

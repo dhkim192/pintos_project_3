@@ -128,6 +128,7 @@ int main(void)
 #endif
 
     frame_init();
+    swap_init (8 * 1024);
     printf("Boot complete.\n");
 
     /* Run actions specified on kernel command line. */

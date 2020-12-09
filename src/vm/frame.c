@@ -15,20 +15,20 @@ static struct list frame_list;
 struct lock frame_list_lock;
 struct list_elem * lru_clock;
 
-void
-frame_init (void) {
+void frame_init (void) {
     list_init(&frame_list);
     lock_init(&frame_list_lock);
     lru_clock = NULL;
 }
 
 struct frame * frame_alloc (void *upage) {
-    struct frame *f = malloc (sizeof (struct frame));
-    f->kpage = palloc_get_page (PAL_USER);
-    while (!f->kpage) {
+    struct frame *f = malloc(sizeof (struct frame));
+    f->kpage = palloc_get_page(PAL_USER);
+    if (!f->kpage) {
         make_free_page();
-        f->kpage = palloc_get_page (PAL_USER);
+        f->kpage = palloc_get_page(PAL_USER);
     }
+    
     f->owner = thread_current();
     f->upage = upage;
   
@@ -59,4 +59,48 @@ void frame_free (void *kpage) {
             elem = list_next(elem);
         }
     }
+}
+
+struct list_elem * get_next_lru_clock() {
+    if (!lru_clock || lru_clock == list_end(&frame_list)) {
+        if (list_empty(&frame_list)) {
+            return NULL;
+        } else {
+            lru_clock = list_begin(&frame_list);
+            return lru_clock;
+        }
+    }
+    lru_clock = list_next(lru_clock);
+    if (lru_clock == list_end(&frame_list)) {
+        lru_clock = list_begin(&frame_list);
+    }
+    return lru_clock;
+}
+
+struct frame * choose_frame() {
+    struct frame * frame;
+    struct list_elem * elem;
+
+    elem = get_next_lru_clock();
+    if (!elem) {
+        syscall_exit(-1);
+    }
+    frame = list_entry(elem, struct frame, list_elem);
+    if (!frame) {
+        syscall_exit(-1);
+    }
+
+    while (pagedir_is_accessed (frame->owner->pagedir, frame->upage)){
+        pagedir_set_accessed (frame->owner->pagedir, frame->upage, false);
+        elem = get_next_lru_clock();
+        if (!elem) {
+            syscall_exit(-1);
+        }
+        frame = list_entry (elem, struct frame, list_elem);
+        if (!frame) {
+            syscall_exit(-1);
+        }
+    }
+
+    return frame;
 }

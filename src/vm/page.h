@@ -35,7 +35,7 @@ struct virtual_memory_entry {
 
 struct mapping {
     int handle;                
-    struct file *file;     
+    struct file * file;     
     struct list mapping_list;
     struct list_elem mmap_elem;  
 };
@@ -50,5 +50,7 @@ void destroy_virtual_memory_entry(struct hash_elem * elem, void *aux UNUSED);
 void virtual_memory_entry_destroy(struct hash * virtual_memory);
 
 bool lazy_load(void * vaddr);
+
+void make_free_page();
 
 #endif /* vm/page.h */
