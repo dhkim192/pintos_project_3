@@ -403,7 +403,7 @@ static int syscall_read(int fd, void *buffer, unsigned size)
     fde = process_get_fde(fd);
     if (!fde)
         return -1;
-
+ 
     lock_acquire(&filesys_lock);
     bytes_read = (int)file_read(fde->file, buffer, (off_t)size);
     lock_release(&filesys_lock);
@@ -482,3 +482,113 @@ void syscall_close(int fd)
     lock_release(&filesys_lock);
 }
 
+static bool
+install_page (void *upage, void *kpage, bool writable)
+{
+    struct thread *t = thread_current ();
+
+    /* Verify that there's not already a page at that virtual
+       address, then map our page there. */
+    return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+void do_munmap (struct mapping * mmap) {
+    struct list_elem * elem;
+
+    for (elem = list_begin (&mmap->mapping_list); elem != list_end (&mmap->mapping_list);) {
+        struct virtual_memory_entry * entry = list_entry (elem, struct virtual_memory_entry, mmap_elem);
+        if (!entry) {
+            syscall_exit(-1);
+        }
+        if (pagedir_is_dirty(thread_current()->pagedir, entry->vaddr)) {
+            lock_acquire (&filesys_lock);
+            if (file_write_at(entry->file, entry->kpage, entry->read_bytes, entry->offset) != entry->read_bytes) {
+                lock_release(&filesys_lock);
+                syscall_exit(-1);
+            }
+            lock_release (&filesys_lock);
+        }
+        frame_free(entry->kpage);
+        virtual_memory_entry_delete(&thread_current()->virtual_memory,entry);
+        elem = list_remove(elem);
+    }
+
+    list_remove(&mmap->mmap_elem);
+    free(mmap);
+}
+
+struct mapping * find_mapping(int handle) {
+    struct thread * cur = thread_current();
+    struct list_elem * elem;
+
+    for (elem = list_begin(&cur->mappings); elem != list_end (&cur->mappings); elem = list_next (elem)) {
+        struct mapping * mmap = list_entry(elem, struct mapping, mmap_elem);
+        if (mmap->handle == handle) {
+            return mmap;
+        }
+    }
+    return NULL;
+}
+
+int syscall_mmap (int handle, void * addr) {
+    struct file_descriptor_entry * fde = process_get_fde(handle);
+    struct mapping * mmap = malloc(sizeof * mmap);
+    size_t offset;
+    off_t length;
+
+    if (!fde || !mmap || !addr || pg_ofs(addr)) {
+        return -1;
+    }
+
+    list_init(&mmap->mapping_list);
+    handle = thread_current()->next_handle;
+    thread_current()->next_handle++;
+
+    lock_acquire (&filesys_lock);
+    mmap->file = file_reopen (fde->file);
+    lock_release (&filesys_lock);
+
+    if (!mmap->file) {
+        free (mmap);
+        return -1;
+    }
+    list_push_front (&thread_current()->mappings, &mmap->mmap_elem);
+
+    lock_acquire (&filesys_lock);
+    length = file_length (mmap->file);
+    lock_release (&filesys_lock);
+    offset = 0;
+    while (length > 0) {
+        struct virtual_memory_entry * entry = malloc(sizeof * entry);
+        if (!entry) {
+            do_munmap (mmap);
+            return -1;
+        }
+
+        entry->file = mmap->file;
+        entry->writable = true;
+        entry->read_bytes = length >= PGSIZE ? PGSIZE : length;
+        entry->zero_bytes = PGSIZE - entry->read_bytes;
+        entry->virtual_memory = MEMORY_MAPPED_FILE; 
+        entry->vaddr = addr;
+        entry->offset = offset;
+
+        virtual_memory_entry_insert(&thread_current()->virtual_memory, entry);
+        list_push_front(&mmap->mapping_list, &entry->mmap_elem); 
+        
+        offset += PGSIZE;
+        length -= PGSIZE;
+        addr += PGSIZE;
+    }
+
+    return mmap->handle;
+}
+
+void syscall_munmap (int mapping) {
+    struct mapping * mmap = find_mapping(mapping);
+    if (!mmap) {
+        syscall_exit(-1);
+    }
+    do_munmap(mmap);
+}

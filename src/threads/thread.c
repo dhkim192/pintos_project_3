@@ -656,6 +656,8 @@ init_thread(struct thread *t, const char *name, int priority)
     t->next_fd = 2;
 #endif
     t->magic = THREAD_MAGIC;
+    list_init(&t->mappings);
+    t->next_handle = 2;
 
     old_level = intr_disable();
     list_push_back(&all_list, &t->allelem);

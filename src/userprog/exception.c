@@ -155,6 +155,14 @@ page_fault(struct intr_frame *f)
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
 
+    struct virtual_memory_entry * entry = virtual_memory_entry_find(fault_addr);
+    if (verify_stack(fault_addr, f->esp)) {
+        if (!entry) {    
+            expand_stack(fault_addr);
+            return;
+        }
+    }
+
     if (not_present) {
         if (!lazy_load(pg_round_down(fault_addr))) {
             syscall_exit(-1);
@@ -171,4 +179,43 @@ page_fault(struct intr_frame *f)
            write ? "writing" : "reading",
            user ? "user" : "kernel");*/
     kill(f);
+}
+
+static bool
+install_page(void *upage, void *kpage, bool writable)
+{
+    struct thread *t = thread_current();
+
+    /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+    return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
+}
+
+bool verify_stack(int32_t addr, int32_t esp) {
+    if (is_user_vaddr(addr) && esp - addr <= 32 && PHYS_BASE - addr <= 8 * 1024 * 1024) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void expand_stack(void * addr) {
+    struct virtual_memory_entry * entry = malloc(sizeof * entry);
+    if (!entry) {
+        return false;
+    }
+
+    struct frame * frame = frame_alloc(pg_round_down(addr));
+
+    if (!install_page(frame->upage, frame->kpage,true)) {
+        frame_free(frame);
+        return false;
+    }
+
+    memset (entry, 0, sizeof * entry);
+    entry->vaddr = frame->upage;
+    entry->kpage = frame->kpage;
+    entry->virtual_memory = SWAPPING; 
+    entry->writable = true;
+    virtual_memory_entry_insert(&thread_current()->virtual_memory, entry);
 }

@@ -94,6 +94,16 @@ bool lazy_load(void * vaddr) {
         memset (f->kpage + entry->read_bytes, 0, entry->zero_bytes);
         entry->is_loaded = true;
         break;
+    case MEMORY_MAPPED_FILE:
+        if (file_read_at(entry->file, f->kpage, entry->read_bytes, entry->offset) != (int) entry->read_bytes) {
+            frame_free(f->kpage);
+            return false;
+        }
+        memset (f->kpage + entry->read_bytes, 0, entry->zero_bytes);
+        entry->is_loaded = true;
+        break;
+    case SWAPPING:
+        break;
     default:
         NOT_REACHED ();
     }

@@ -118,7 +118,8 @@ struct thread
 #endif
 
    struct hash virtual_memory;
-   
+   struct list mappings;
+   int next_handle;
 
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
