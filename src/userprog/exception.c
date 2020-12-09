@@ -174,7 +174,7 @@ page_fault(struct intr_frame *f)
     }
 
     if (!user) {
-        if (lock_held_by_current_thread (&filesys_lock)) {
+        if (lock_held_by_current_thread(&filesys_lock)) {
             lock_release (&filesys_lock);
         }
         syscall_exit (-1);
