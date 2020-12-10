@@ -498,7 +498,7 @@ struct mapping * find_mapping (int handle) {
     struct list_elem * elem;
  
     for (elem = list_begin(&cur->mappings); elem != list_end (&cur->mappings); elem = list_next (elem)) {
-        struct mapping * mmap = list_entry(elem, struct mapping, mmap_elem);
+        struct mapping * mmap = list_entry(elem, struct mapping, mapping_elem);
         if (mmap->handle == handle) { 
             return mmap;
         }
@@ -528,7 +528,7 @@ void do_munmap (struct mapping * mmap) {
     }
 
     file_close(mmap->file);
-    list_remove(&mmap->mmap_elem);
+    list_remove(&mmap->mapping_elem);
     free(mmap);
 }
 
@@ -556,7 +556,7 @@ int syscall_mmap (int handle, void * addr) {
         free (mmap);
         return -1;
     }
-    list_push_front (&thread_current()->mappings, &mmap->mmap_elem);
+    list_push_front (&thread_current()->mappings, &mmap->mapping_elem);
 
     lock_acquire (&filesys_lock);
     length = file_length (mmap->file);
@@ -603,7 +603,7 @@ void munmap_all() {
     struct thread * cur = thread_current();
 
     while (!list_empty (&cur->mappings)) {
-        struct mapping * mmap = list_entry (list_front (&cur->mappings), struct mapping, mmap_elem);
+        struct mapping * mmap = list_entry (list_front (&cur->mappings), struct mapping, mapping_elem);
         do_munmap(mmap);
     }
 }

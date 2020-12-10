@@ -37,7 +37,7 @@ struct mapping {
     int handle;                
     struct file * file;     
     struct list mapping_list;
-    struct list_elem mmap_elem;  
+    struct list_elem mapping_elem;  
 };
 
 hash_hash_func hash_func;
