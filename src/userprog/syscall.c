@@ -385,10 +385,24 @@ static int syscall_filesize(int fd)
 static int syscall_read(int fd, void *buffer, unsigned size)
 {
     struct file_descriptor_entry *fde;
-    int bytes_read, i;
+    int bytes_read, i, k, j;
 
     for (i = 0; i < size; i++)
         check_vaddr(buffer + i);
+
+    for (k = buffer; k < (buffer + size); k += PGSIZE) { 
+        struct virtual_memory_entry * entry = virtual_memory_entry_find(k);
+        if (!entry) {
+            break;
+        }
+        if (!entry->writable) {
+            syscall_exit(-1);
+        }  
+        entry->pinning = true;
+        if (!entry->is_loaded) {
+            lazy_load(entry->vaddr);
+        }
+    }
 
     if (fd == 0)
     {
@@ -397,16 +411,40 @@ static int syscall_read(int fd, void *buffer, unsigned size)
         for (i = 0; i < size; i++)
             *(uint8_t *)(buffer + i) = input_getc();
 
+        for (j = buffer; j < buffer + size; j += PGSIZE) {
+            struct virtual_memory_entry * entry = virtual_memory_entry_find(k);
+            if (!entry) {
+                break;
+            }
+            entry->pinning = false;
+        }
+
         return size;
     }
 
     fde = process_get_fde(fd);
-    if (!fde)
+    if (!fde) {
+        for (j = buffer; j < buffer + size; j += PGSIZE) {
+            struct virtual_memory_entry * entry = virtual_memory_entry_find(k);
+            if (!entry) {
+                break;
+            }
+            entry->pinning = false;
+        }
         return -1;
- 
+    }
+    
     lock_acquire(&filesys_lock);
     bytes_read = (int)file_read(fde->file, buffer, (off_t)size);
     lock_release(&filesys_lock);
+
+    for (j = buffer; j < buffer + size; j += PGSIZE) {
+        struct virtual_memory_entry * entry = virtual_memory_entry_find(k);
+        if (!entry) {
+                break;
+            }
+        entry->pinning = false;
+    }
 
     return bytes_read;
 }

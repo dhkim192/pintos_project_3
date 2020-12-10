@@ -89,7 +89,9 @@ struct frame * choose_frame() {
         syscall_exit(-1);
     }
 
-    while (pagedir_is_accessed (frame->owner->pagedir, frame->upage)){
+    struct virtual_memory_entry * entry = virtual_memory_entry_find(frame->upage);
+
+    while (pagedir_is_accessed (frame->owner->pagedir, frame->upage) || entry->pinning){
         pagedir_set_accessed (frame->owner->pagedir, frame->upage, false);
         elem = get_next_clock();
         if (!elem) {

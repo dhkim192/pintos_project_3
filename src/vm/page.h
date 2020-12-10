@@ -19,6 +19,7 @@ struct virtual_memory_entry {
     void * kpage;
     bool writable;
     bool is_loaded;
+    bool pinning;
 
     struct file * file;
 
